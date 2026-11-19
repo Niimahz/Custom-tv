@@ -37,3 +37,31 @@ jobs:
         with:
           name: CouchTV-Custom-APK
           path: upstream/on-tv/android/app/build/outputs/apk/release/*.apk
+
+  windows:
+    needs: android
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: CouchTV-Custom-APK
+          path: payload
+      - name: Download ADB platform tools
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://dl.google.com/android/repository/platform-tools-latest-windows.zip -OutFile tools.zip
+          Expand-Archive tools.zip -DestinationPath .
+          Copy-Item (Get-ChildItem payload -Filter *.apk | Select-Object -First 1).FullName CouchTV-Custom.apk
+      - name: Build EXE
+        shell: pwsh
+        run: |
+          python -m pip install pyinstaller
+          pyinstaller --noconfirm --onefile --windowed --name CouchTV-Custom-Setup --add-data "CouchTV-Custom.apk;." --add-data "platform-tools;platform-tools" windows/installer.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CouchTV-Custom-Windows-Installer
+          path: dist/CouchTV-Custom-Setup.exe
