@@ -60,20 +60,8 @@ bridge="""
         }
 """
 change(home,'    inner class Native {','    inner class Native {\n'+bridge)
-index=r/'tv-home/web/index.html'
-html=index.read_text()
-if 'id="custom-amazon-home"' not in html:
-    button = """
-<style>
-#custom-amazon-home { position:fixed; bottom:24px; right:24px; z-index:999999;
- background:#222c3d; color:white; border:2px solid #9bb2d4; border-radius:16px;
- padding:14px 22px; font-size:20px; font-family:Arial,sans-serif; cursor:pointer }
-#custom-amazon-home:focus { outline:4px solid white }
-</style>
-<button id="custom-amazon-home" onclick="if(window.TVOS && TVOS.openAmazonHome){if(!TVOS.openAmazonHome())alert('Amazon Home is not available on this TV')}else alert('Amazon Home is unavailable')">Amazon Home</button>
-"""
-    if '</body>' not in html: raise RuntimeError('Missing body')
-    index.write_text(html.replace('</body>',button+'\n</body>',1))
+# Amazon Home belongs in the native, remote-focusable app grid, not in a fixed HTML button.
+# The original Settings > People editor is retained; it already supports add/rename/remove.
 app=r/'tv-home/web/app.js'
 js=app.read_text()
 clock_anchor='function clock() {\n    var d = new Date(),'
@@ -82,4 +70,35 @@ if clock_anchor in js:
 elif 'function clock() {\n    var d = new Date(Date.now() + 3600000),' not in js:
     raise RuntimeError('Clock offset anchor not found')
 app.write_text(js)
-print('Native, clock and Amazon Home UI patches applied')
+
+# Inject a first-class, focusable app tile into the existing grid.
+# Use an inline SVG banner so the icon works offline and scales like other app tiles.
+native_anchor='''    return list.map(function (a) {
+      return { kind: "app", name: RENAME[a.package] ? t(RENAME[a.package]) : a.label, package: a.package,
+        banner: TV.bannerUrl ? TV.bannerUrl(a.package) : "http://tvos.invalid/banner/" + a.package };   // the launcher makes one when the app has none
+    });'''
+native_replacement='''    var items = list.map(function (a) {
+      return { kind: "app", name: RENAME[a.package] ? t(RENAME[a.package]) : a.label, package: a.package,
+        banner: TV.bannerUrl ? TV.bannerUrl(a.package) : "http://tvos.invalid/banner/" + a.package };   // the launcher makes one when the app has none
+    });
+    if (TV && TV.openAmazonHome) items.push({
+      kind: "app", name: "Amazon Home", package: "custom.amazon.home",
+      banner: "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><defs><linearGradient id="g" x2="1" y2="1"><stop stop-color="#2d384c"/><stop offset="1" stop-color="#101826"/></linearGradient></defs><rect width="128" height="128" rx="26" fill="url(#g)"/><path d="M30 65 64 36l34 29v33H75V76H53v22H30Z" fill="#fff"/><path d="M43 106q21 11 43 0" fill="none" stroke="#ffb454" stroke-width="6" stroke-linecap="round"/></svg>')
+    });
+    return items;'''
+if js.count(native_anchor)!=1: raise RuntimeError('Native app list anchor missing or changed')
+js=js.replace(native_anchor,native_replacement,1)
+launch_anchor='''    opened(a.package);
+    if (TV && TV.launch(a.package)) return;
+    api("POST", "/api/launch", { app: a.id || a.package })'''
+launch_replacement='''    if (a.package === "custom.amazon.home") {
+      if (!TV || !TV.openAmazonHome || !TV.openAmazonHome()) flash("Amazon Home unavailable");
+      return;
+    }
+    opened(a.package);
+    if (TV && TV.launch(a.package)) return;
+    api("POST", "/api/launch", { app: a.id || a.package })'''
+if js.count(launch_anchor)!=1: raise RuntimeError('App activation anchor missing or changed')
+js=js.replace(launch_anchor,launch_replacement,1)
+app.write_text(js)
+print('Native, clock, profile settings preserved, and focusable Amazon Home app tile applied')
