@@ -73,13 +73,13 @@ if 'id="custom-amazon-home"' not in html:
 <button id="custom-amazon-home" onclick="if(window.TVOS && TVOS.openAmazonHome){if(!TVOS.openAmazonHome())alert('Amazon Home is not available on this TV')}else alert('Amazon Home is unavailable')">Amazon Home</button>
 """
     if '</body>' not in html: raise RuntimeError('Missing body')
-    index.write_text(html.replace('</body>',button+'\\n</body>',1))
+    index.write_text(html.replace('</body>',button+'\n</body>',1))
 app=r/'tv-home/web/app.js'
 js=app.read_text()
-clock_anchor='function clock() {\\n    var d = new Date(),'
+clock_anchor='function clock() {\n    var d = new Date(),'
 if clock_anchor in js:
-    js=js.replace(clock_anchor,'function clock() {\\n    var d = new Date(Date.now() + 3600000),',1)
-elif 'function clock() {\\n    var d = new Date(Date.now() + 3600000),' not in js:
+    js=js.replace(clock_anchor,'function clock() {\n    var d = new Date(Date.now() + 3600000),',1)
+elif 'function clock() {\n    var d = new Date(Date.now() + 3600000),' not in js:
     raise RuntimeError('Clock offset anchor not found')
 app.write_text(js)
 print('Native, clock and Amazon Home UI patches applied')
