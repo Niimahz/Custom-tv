@@ -80,7 +80,29 @@ def install_worker(serial):
         if rc or 'success' not in out.lower():raise RuntimeError('Install failed: '+out)
         rc,out=adb('shell','pm','path','dev.couchtv.ontv',serial=serial)
         if rc or 'package:' not in out:raise RuntimeError('Package verification failed: '+out)
-        ui('Custom Couch TV installed and verified.')
+        ui('Configuring Couch TV as the home screen…')
+        grants=[
+            ('pm','enable','dev.couchtv.ontv/.HomeAlias'),
+            ('pm','grant','dev.couchtv.ontv','android.permission.WRITE_SECURE_SETTINGS'),
+            ('appops','set','dev.couchtv.ontv','SYSTEM_ALERT_WINDOW','allow'),
+            ('appops','set','dev.couchtv.ontv','GET_USAGE_STATS','allow'),
+            ('cmd','package','set-home-activity','dev.couchtv.ontv/.HomeAlias')
+        ]
+        failures=[]
+        for command in grants:
+            try:
+                code,output=adb('shell',*command,serial=serial,timeout=15)
+                if code: failures.append(' '.join(command)+': '+output[:150])
+            except Exception as exc: failures.append(' '.join(command)+': '+str(exc))
+        # Launch Couch TV after granting permissions; its service can then
+        # enable the accessibility watcher for Amazon Home interception.
+        adb('shell','am','start','-n','dev.couchtv.ontv/.HomeActivity',serial=serial,timeout=20)
+        if failures:
+            ui('Installed. Some Home-screen permissions could not be applied; check Fire TV settings.')
+            root.after(0,lambda details='\\n'.join(failures):messagebox.showwarning('Couch TV home setup','Couch TV installed, but some automatic Home setup steps failed:\\n'+details))
+        else:
+            ui('Installed. Couch TV Home permissions configured; reboot test recommended.')
+
         root.after(0,lambda:messagebox.showinfo('Couch TV','Custom Couch TV installed successfully.'))
     except Exception as e:
         ui('Error: '+str(e))
