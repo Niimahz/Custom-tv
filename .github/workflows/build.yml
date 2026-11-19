@@ -14,7 +14,8 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
+      - name: Use preinstalled Android SDK
+        run: echo "ANDROID_HOME=$ANDROID_HOME" && ls "$ANDROID_HOME/platforms" || true
       - name: Fetch upstream
         run: git clone --depth 1 https://github.com/Seagey/couch-tv.git upstream
       - name: Build phone remote
