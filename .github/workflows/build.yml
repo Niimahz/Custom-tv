@@ -1,0 +1,35 @@
+name: Build Couch TV Custom
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Download upstream source
+        run: |
+          git clone --depth 1 https://github.com/Seagey/couch-tv.git upstream
+      - name: Apply customization
+        run: |
+          python3 patches/apply_custom.py upstream
+      - name: Build Android APK
+        working-directory: upstream/on-tv/android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --stacktrace
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: couch-tv-android-build
+          path: |
+            upstream/on-tv/android/app/build/outputs/apk/**/*.apk
+            upstream/on-tv/android/app/build/reports/**
