@@ -1,4 +1,4 @@
-name: Build Couch TV Custom
+name: Couch TV Original Setup - Clock +1h
 on:
   workflow_dispatch:
   push:
@@ -14,54 +14,93 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Use preinstalled Android SDK
-        run: echo "ANDROID_HOME=$ANDROID_HOME" && ls "$ANDROID_HOME/platforms" || true
-      - name: Fetch upstream
+      - name: Fetch latest upstream
         run: git clone --depth 1 https://github.com/Seagey/couch-tv.git upstream
-      - name: Build phone remote
-        working-directory: upstream/remote
-        run: |
-          npm ci
-          npm run build
-      - name: Apply native and web customizations
+      - name: Clock only patch
         run: python3 patches/apply_custom.py upstream
       - name: Install Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
-      - name: Build signed Android APK
+      - name: Build original Home APK with clock fix
+        working-directory: upstream/tv-home/android
+        run: gradle assembleRelease --stacktrace -PupdateRepo=
+      - name: Build original optional on-TV companion
         working-directory: upstream/on-tv/android
         run: gradle assembleRelease --stacktrace
+      - name: Stage APKs for original installer
+        run: |
+          mkdir -p payload
+          cp upstream/tv-home/android/app/build/outputs/apk/release/*.apk payload/couch-tv-home.apk
+          cp upstream/on-tv/android/app/build/outputs/apk/release/*.apk payload/couch-tv-ontv.apk
       - uses: actions/upload-artifact@v4
-        if: always()
         with:
-          name: CouchTV-Custom-APK
-          path: upstream/on-tv/android/app/build/outputs/apk/release/*.apk
+          name: CouchTV-ClockPlus1-APKs
+          path: payload/*.apk
 
-  windows:
+  original-windows-setup:
     needs: android
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Fetch original Couch TV Setup
+        shell: bash
+        run: git clone --depth 1 https://github.com/Seagey/couch-tv.git upstream
       - uses: actions/download-artifact@v4
         with:
-          name: CouchTV-Custom-APK
-          path: payload
-      - name: Download ADB platform tools
-        shell: pwsh
+          name: CouchTV-ClockPlus1-APKs
+          path: upstream/setup-app/bundled-apks
+      - name: Make original Setup use bundled custom Home APK
+        shell: bash
         run: |
-          Invoke-WebRequest https://dl.google.com/android/repository/platform-tools-latest-windows.zip -OutFile tools.zip
-          Expand-Archive tools.zip -DestinationPath .
-          Copy-Item (Get-ChildItem payload -Filter *.apk | Select-Object -First 1).FullName CouchTV-Custom.apk
-      - name: Build EXE
-        shell: pwsh
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('upstream/setup-app/couch-tv-setup.py')
+          s=p.read_text()
+          marker='import sys\n'
+          assert s.count(marker)==1
+          s=s.replace(marker, marker+'''import os
+          from pathlib import Path
+          os.environ["COUCHTV_SETUP_APK_DIR"] = str(Path(__file__).resolve().parent / "bundled-apks")
+          ''',1)
+          p.write_text(s)
+          PY
+      - name: Install original Setup dependencies
+        working-directory: upstream/setup-app
+        shell: bash
         run: |
-          python -m pip install pyinstaller
-          pyinstaller --noconfirm --onefile --windowed --name CouchTV-Custom-Setup --add-data "CouchTV-Custom.apk;." --add-data "platform-tools;platform-tools" windows/installer.py
+          python -m pip install --disable-pip-version-check --require-hashes -r requirements.txt
+          python -m pip install --disable-pip-version-check pyinstaller==6.16.0
+      - name: Original Setup unit tests
+        working-directory: upstream/setup-app
+        shell: bash
+        run: python -m unittest discover -s tests -q
+      - name: Build original Windows Setup with bundled APKs
+        working-directory: upstream/setup-app
+        shell: bash
+        run: |
+          pyinstaller --noconfirm --windowed --name "couch-tv Setup" \
+            --add-data "couchtv_setup/web;couchtv_setup/web" \
+            --add-data "bundled-apks;bundled-apks" \
+            --add-data "THIRD-PARTY.md;." \
+            --add-data "../LICENSE;." \
+            --collect-data certifi \
+            --copy-metadata adb-shell --copy-metadata cryptography --copy-metadata pyOpenSSL \
+            --copy-metadata rsa --copy-metadata pyasn1 --copy-metadata cffi --copy-metadata pycparser \
+            --copy-metadata typing_extensions --copy-metadata certifi \
+            couch-tv-setup.py
+      - name: Smoke test original Setup
+        working-directory: upstream/setup-app
+        shell: bash
+        run: python tests/smoke.py "dist/couch-tv Setup/couch-tv Setup.exe"
+      - name: Package original Windows Setup
+        working-directory: upstream/setup-app
+        shell: bash
+        run: python -c "import shutil;shutil.make_archive('couch-tv-Setup-ClockPlus1-windows','zip','dist','couch-tv Setup')"
       - uses: actions/upload-artifact@v4
         with:
-          name: CouchTV-Custom-Windows-Installer
-          path: dist/CouchTV-Custom-Setup.exe
+          name: CouchTV-Original-Setup-ClockPlus1-Windows
+          path: upstream/setup-app/couch-tv-Setup-ClockPlus1-windows.zip
