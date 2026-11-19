@@ -1,40 +1,55 @@
-import os,sys,subprocess,threading,tkinter as tk
-from tkinter import ttk,messagebox
+import sys, subprocess, threading, tkinter as tk, http.server, socketserver, json, webbrowser
 from pathlib import Path
+from tkinter import messagebox
 base=Path(getattr(sys,'_MEIPASS',Path(__file__).parent))
 APK=base/'CouchTV-Custom.apk'
 ADB=base/'platform-tools'/'adb.exe'
-root=tk.Tk();root.title('Couch TV Custom - Fire TV Installer');root.geometry('550x320')
-tk.Label(root,text='Couch TV Custom Installer',font=('Segoe UI',18,'bold')).pack(pady=15)
-tk.Label(root,text='Fire TV IP address (Settings > My Fire TV > About > Network)').pack()
+HTML=base/'setup.html'
+root=tk.Tk()
+root.title('Couch TV — Custom Setup')
+root.geometry('680x460')
+root.configure(bg='#0b0b0d')
+tk.Label(root,text='Couch TV',fg='#f2ead8',bg='#0b0b0d',font=('Segoe UI',28,'bold')).pack(pady=(22,4))
+tk.Label(root,text='Fire TV installation & original Couch TV setup',fg='#bdb6a7',bg='#0b0b0d').pack(pady=(0,20))
+panel=tk.Frame(root,bg='#16161a',padx=24,pady=20);panel.pack(fill='x',padx=35)
+tk.Label(panel,text='Fire TV IP address',bg='#16161a',fg='#f2ead8',font=('Segoe UI',13,'bold')).pack(anchor='w')
 ip=tk.StringVar()
-tk.Entry(root,textvariable=ip,width=35).pack(pady=8)
-status=tk.StringVar(value='Enable ADB Debugging on Fire TV first.')
-tk.Label(root,textvariable=status,wraplength=500).pack(pady=8)
-bar=ttk.Progressbar(root,mode='indeterminate',length=450);bar.pack(pady=8)
-log=tk.Text(root,height=5,width=65);log.pack(padx=10,pady=8)
-def say(s):
- root.after(0,lambda:(log.insert('end',s+'\\n'),log.see('end'),status.set(s)))
-def work():
+tk.Entry(panel,textvariable=ip,font=('Segoe UI',13),bg='#0f0f12',fg='white',insertbackground='white').pack(fill='x',pady=12)
+status=tk.StringVar(value='Enable ADB debugging in Fire TV settings.')
+tk.Label(panel,textvariable=status,bg='#16161a',fg='#ffb52e',wraplength=550).pack(anchor='w')
+def cmd(args,timeout=120):
+ p=subprocess.run([str(ADB)]+args,capture_output=True,text=True,timeout=timeout)
+ if p.returncode:raise RuntimeError((p.stdout+p.stderr).strip())
+ return (p.stdout+p.stderr).strip()
+def install():
  host=ip.get().strip()
- if not host:say('Enter Fire TV IP');return
+ if not host:status.set('Enter the IP address.');return
  def run():
-  root.after(0,bar.start)
   try:
-   if not APK.exists() or not ADB.exists():raise RuntimeError('Installer payload missing')
-   say('Connecting to '+host)
-   p=subprocess.run([str(ADB),'connect',host+':5555'],capture_output=True,text=True,timeout=35)
-   say((p.stdout+p.stderr).strip())
-   if 'connected' not in p.stdout.lower():raise RuntimeError('ADB connection failed; approve debugging on TV')
-   say('Installing APK ...')
-   p=subprocess.run([str(ADB),'-s',host+':5555','install','-r',str(APK)],capture_output=True,text=True,timeout=180)
-   if p.returncode:raise RuntimeError((p.stdout+p.stderr).strip())
-   say('Installation complete')
-   root.after(0,lambda:messagebox.showinfo('Couch TV','Installed successfully'))
+   root.after(0,lambda:status.set('Connecting — approve ADB authorization on the TV ...'))
+   result=cmd(['connect',host+':5555'],40)
+   if 'connected' not in result.lower():raise RuntimeError(result)
+   root.after(0,lambda:status.set('Installing custom Couch TV ...'))
+   cmd(['-s',host+':5555','install','-r',str(APK)],180)
+   root.after(0,lambda:status.set('Installed. Opening original TV Setup ...'))
+   cmd(['-s',host+':5555','shell','am','start','-n','dev.couchtv.ontv/.SetupActivity'],30)
+   root.after(0,lambda:messagebox.showinfo('Couch TV','Installed. Original setup is open on the TV.'))
   except Exception as e:
-   say('ERROR: '+str(e))
-   root.after(0,lambda:messagebox.showerror('Error',str(e)))
-  finally:root.after(0,bar.stop)
+   root.after(0,lambda:status.set('Error: '+str(e)))
  threading.Thread(target=run,daemon=True).start()
-tk.Button(root,text='Connect and Install',command=work,font=('Segoe UI',12,'bold')).pack()
+def open_setup():
+ host=ip.get().strip()
+ if not host:status.set('Enter IP first.');return
+ def run():
+  try:
+   cmd(['connect',host+':5555'],40)
+   cmd(['-s',host+':5555','shell','am','start','-n','dev.couchtv.ontv/.SetupActivity'],30)
+   root.after(0,lambda:status.set('Original setup opened on Fire TV.'))
+  except Exception as e:root.after(0,lambda:status.set(str(e)))
+ threading.Thread(target=run,daemon=True).start()
+def button(label,action):
+ tk.Button(panel,text=label,command=action,bg='#ffb52e',fg='#111',activebackground='#ffca65',relief='flat',font=('Segoe UI',12,'bold'),pady=10).pack(fill='x',pady=7)
+button('Install Couch TV Custom',install)
+button('Open original Couch TV Setup on Fire TV',open_setup)
+tk.Label(root,text='Original setup screen and all device settings remain inside the installed TV app.',bg='#0b0b0d',fg='#bdb6a7',wraplength=600).pack(pady=20)
 root.mainloop()
