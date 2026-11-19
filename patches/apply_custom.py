@@ -60,4 +60,18 @@ bridge="""
         }
 """
 change(home,'    inner class Native {','    inner class Native {\n'+bridge)
-print('Native patch applied')
+index=r/'tv-home/web/index.html'
+html=index.read_text()
+if 'id="custom-amazon-home"' not in html:
+    button = """
+<style>
+#custom-amazon-home { position:fixed; bottom:24px; right:24px; z-index:999999;
+ background:#222c3d; color:white; border:2px solid #9bb2d4; border-radius:16px;
+ padding:14px 22px; font-size:20px; font-family:Arial,sans-serif; cursor:pointer }
+#custom-amazon-home:focus { outline:4px solid white }
+</style>
+<button id="custom-amazon-home" onclick="if(window.TVOS && TVOS.openAmazonHome){if(!TVOS.openAmazonHome())alert('Amazon Home is not available on this TV')}else alert('Amazon Home is unavailable')">Amazon Home</button>
+"""
+    if '</body>' not in html: raise RuntimeError('Missing body')
+    index.write_text(html.replace('</body>',button+'\\n</body>',1))
+print('Native and Amazon Home UI patch applied')
